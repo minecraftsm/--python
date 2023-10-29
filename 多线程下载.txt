@@ -1,0 +1,75 @@
+import threading
+import requests
+import os
+from urllib.parse import urlparse, unquote
+
+# wb,rb等为格式
+
+def get_filename_from_url(url):
+    # 从URL中获取文件名
+    parsed_url = urlparse(url)
+    filename = unquote(os.path.basename(parsed_url.path))
+    return filename
+
+def get_file_extension(filename):
+    # 获取文件的后缀名(failed)
+    _, file_extension = os.path.splitext(filename) # 加入"_,"来确保最后不出现符号
+    return file_extension
+
+def download_file(url, thread_id, num_threads):
+    response = requests.get(url, stream=True) # 启动流式下载
+    total_size = int(response.headers.get('content-length', 0))
+    chunk_size = total_size // num_threads
+
+    start_byte = thread_id * chunk_size
+    end_byte = start_byte + chunk_size
+
+    headers = {'Range': f'bytes={start_byte}-{end_byte}'}
+
+    downloaded_bytes = 0
+
+    # 获取文件名并提取后缀(后缀failed)
+    filename = get_filename_from_url(url)
+    file_extension = get_file_extension(filename)
+
+    with open(f'download_part_{thread_id}{file_extension}', 'wb') as f:
+        for chunk in response.iter_content(chunk_size=128):
+            if chunk:
+                f.write(chunk)
+                downloaded_bytes += len(chunk)
+
+                progress = (downloaded_bytes / total_size) * 100
+                print(f"Thread {thread_id} - Progress: {progress:.2f}%")
+
+    print(f"Thread {thread_id} finished downloading")
+
+def main():
+    file_url = input("请输入要下载的URL: ")
+    num_threads = int(input("请输入要使用的线程数量(建议2-8，最佳为4): "))
+
+    thread_list = []
+
+    for i in range(num_threads):
+        thread = threading.Thread(target=download_file, args=(file_url, i, num_threads))
+        thread_list.append(thread)
+        thread.start()
+
+    for thread in thread_list:
+        thread.join()
+
+    # 获取文件名并提取后缀(failed)
+    filename = get_filename_from_url(file_url)
+    file_extension = get_file_extension(filename)
+
+    # 合并下载的部分文件并添加后缀(failed)
+    with open(f'downloaded_file{file_extension}', 'wb') as output_file:
+        for i in range(num_threads):
+            with open(f'download_part_{i}{file_extension}', 'rb') as part_file:
+                output_file.write(part_file.read())
+
+    # 删除下载的部分文件
+    for i in range(num_threads):
+        os.remove(f'download_part_{i}{file_extension}')
+
+if __name__ == "__main__":
+    main()
